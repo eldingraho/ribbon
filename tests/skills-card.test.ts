@@ -91,7 +91,7 @@ const PANE = {
   props: { title: 'Cache and skills', isFocused: false, bodyColumns: 48, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
-test('Details opens the pane, which lists every skill and the cache numbers', async ($, on) => {
+test('Details in the open card opens the pane, which lists every skill and the cache numbers', async ($, on) => {
   let opened = ''
   on('ui.open', (_, e) => {
     opened = e.id

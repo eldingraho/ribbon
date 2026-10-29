@@ -541,10 +541,11 @@ export const register: Register = on => {
       mine ? <Text key="next" color={MUTED}> next</Text> : null,
     ]
 
+    // One quiet control on the band: muted text, no fill, so it reads below the
+    // data. Details lives in the open card, where the deeper look starts.
     const button = Svg ? (
-      <Box key="fold" flexDirection="row" gap={1} flexShrink={0} alignItems="flex-start">
-        <Button key="cache-fold" label={open ? 'Hide' : 'Show'} onPress={toggle} />
-        <Button key="pane" label="Details" dimColor onPress={() => openPane($)} />
+      <Box key="fold" flexDirection="row" flexShrink={0} alignItems="flex-start">
+        <Button key="cache-fold" plain dimColor hotkey="c" label={open ? 'Hide ▴' : 'Show ▾'} onPress={toggle} />
       </Box>
     ) : null
     const grow = <Box key="grow" flexGrow={1} />
@@ -659,17 +660,19 @@ export const register: Register = on => {
         <Box key="card" flexDirection="column">
           <Svg source={c.source} alt={c.alt} width={c.w} height={c.h} isInteractive={ck !== 'tight'} />
           <Svg key="skills" source={s.source} alt={s.alt} width={s.w} height={s.h} />
-          {newest.length > SHOWN_SKILLS ? (
-            <Box key="skills-more-row" flexDirection="row" paddingX={1}>
-              <Box flexGrow={1} />
+          <Box key="card-footer" flexDirection="row" gap={2} paddingX={1}>
+            <Box flexGrow={1} />
+            {newest.length > SHOWN_SKILLS ? (
               <Button
                 key="skills-more"
-                label={expanded ? 'Show fewer' : `Show all (${newest.length})`}
+                plain
                 dimColor
+                label={expanded ? 'Show fewer' : `Show all (${newest.length})`}
                 onPress={() => update($, isExpanded, x => !x)}
               />
-            </Box>
-          ) : null}
+            ) : null}
+            <Button key="pane" plain dimColor hotkey="d" label="Details ↗" onPress={() => openPane($)} />
+          </Box>
         </Box>
       )
     }

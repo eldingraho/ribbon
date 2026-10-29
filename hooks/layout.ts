@@ -27,8 +27,8 @@ const DOT = 1.35
 const MARGIN = 3
 const LABEL = 5 * LETTER + 3
 const BADGE = 10
-// Show / Hide and Details, side by side.
-const BUTTON = 17
+// The one fold control, "Show ▾" or "Hide ▴" as muted text.
+const BUTTON = 7
 // The band's padding, one cell each side, and room kept free so a near miss
 // still fits. Checked against the desktop: at 49 columns the label and two
 // ten-dot blocks need about 48.
