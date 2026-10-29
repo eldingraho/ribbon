@@ -107,6 +107,8 @@ export type CacheView = {
   mine: string | null
   /** The cache's lifetime in minutes: 60, or 5 once the mod sees the short cache. */
   ttlMin: number
+  /** Cold because the conversation was compacted, not because it sat idle. */
+  isCompacted?: boolean
 }
 
 /** The lifetime as the card labels it. */
@@ -256,11 +258,11 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
     if (o.header) {
       g += roboShapes(x - 2, y + k.lab - 17, 22, mode)
       const c = chipShapes(x + 26, y + k.lab - 13, WORD[mode], HUEM, 11, 1)
-      g += c.svg + t(x + 26 + c.w + 8, y + k.lab, 'IDLE', { ls: 1.4 })
+      g += c.svg + t(x + 26 + c.w + 8, y + k.lab, v.isCompacted ? 'CACHE' : 'IDLE', { ls: 1.4 })
     } else {
-      g += t(x, y + k.lab, 'IDLE', { ls: 1.4 })
+      g += t(x, y + k.lab, v.isCompacted ? 'CACHE' : 'IDLE', { ls: 1.4 })
     }
-    g += t(x, y + k.big, v.idle, { size: k.bs, w: 600, fill: TEXT })
+    g += t(x, y + k.big, v.isCompacted ? 'Compacted' : v.idle, { size: k.bs, w: 600, fill: TEXT })
     const ly = y + k.line
     const x0 = x + 3
     const x1 = x + w - 14
@@ -268,8 +270,8 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       g += `<line x1="${x0}" y1="${ly}" x2="${x0 + 18}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
       for (let cx = x0 + 30; cx <= x1 - 14; cx += 9) g += `<circle cx="${cx}" cy="${ly}" r="2.2" fill="${ICE}"/>`
       g += `<circle cx="${x1}" cy="${ly}" r="5.5" fill="${ICE}"/>`
-      g += t(x, y + k.cap, `warm ${ttlWord(v.ttlMin)}`, { size: 12, w: 600, fill: FIRE })
-      g += t(x1 + 5, y + k.cap, 'cold now', { size: 12, w: 600, fill: ICE, anchor: 'end' })
+      g += t(x, y + k.cap, v.isCompacted ? 'summarized' : `warm ${ttlWord(v.ttlMin)}`, { size: 12, w: 600, fill: FIRE })
+      g += t(x1 + 5, y + k.cap, v.isCompacted ? 'rewrites next' : 'cold now', { size: 12, w: 600, fill: ICE, anchor: 'end' })
     } else {
       const now = x0 + (x1 - x0) * Math.min(1, v.idleMin / v.ttlMin)
       g += `<line x1="${x0}" y1="${ly}" x2="${now}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
@@ -365,7 +367,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
   const price = priced ? usd(costOf(priced, mode, v.tokens, v.ttlMin)) : ''
   const on = priced ? `${priced.NAME[0]}${priced.NAME.slice(1).toLowerCase()}` : ''
   const alt = cold
-    ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens${priced ? `, about ${price} on ${on}` : ''}.`
+    ? `Cache cold. ${v.isCompacted ? 'Compacted' : `Idle ${v.idle}`}. Next message re-caches ${tok(v.tokens)} tokens${priced ? `, about ${price} on ${on}` : ''}.`
     : `Cache warm. Goes cold in ${Math.max(0, v.ttlMin - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.${priced ? ` Next message about ${price} on ${on}.` : ''}`
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

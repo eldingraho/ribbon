@@ -112,9 +112,25 @@ export function expiresAt(state: CacheState): number | null {
   return state.lastHitAt === null ? null : state.lastHitAt + TTL_MS[state.ttl]
 }
 
+// After a compact the cache holds nothing the next request can use, and the
+// conversation is the summary: its size is what the next reply writes.
+export function compacted(state: CacheState | null, at: number, tokensAfter?: number): CacheState | null {
+  if (state === null) return null
+  return {
+    ...state,
+    lastHitAt: state.lastHitAt === null ? null : at,
+    contextTokens: tokensAfter && tokensAfter > 0 ? tokensAfter : state.contextTokens,
+    contextPercent:
+      tokensAfter && tokensAfter > 0 && state.contextWindow > 0 ? tokensAfter / state.contextWindow : state.contextPercent,
+    isCompacted: true,
+  }
+}
+
 export function status(state: CacheState | null, now: number): Status {
   if (state === null) return 'none'
   if (state.isWorking) return 'working'
+  // The summary is a new prefix: nothing cached matches it.
+  if (state.isCompacted) return 'cold'
   const end = expiresAt(state)
   if (end === null) return 'none'
   if (now >= end) return 'cold'

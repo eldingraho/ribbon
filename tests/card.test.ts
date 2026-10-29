@@ -129,3 +129,34 @@ test('a cleared session drops the cache until the next reply', async ($, on) => 
   expect(await band.find({ text: ' 99% left' })).toBeDefined()
   await band.unmount()
 })
+
+const MSGS = [{ role: 'user' as const, text: 'Summary of the conversation so far.', toolUses: [], toolResults: [] }]
+
+test('after a compact the cache is cold at the summary size, and a subagent compact changes nothing', async ($, on) => {
+  mock.store(on)
+  mock.clock(on, { now: NOW })
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1000000 }, rateLimits: WINDOWS } }))
+  on('classic.SessionStart', () => ({}))
+  on('session.compact', () => ({ messages: MSGS, tokensBefore: 770000, tokensAfter: 85000 }))
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: WARM_IDLE, context_tokens: 770000, model: 'claude-opus-5-5' })
+
+  await $.session.compact({ trigger: 'manual', agentId: 'sub-1', messages: MSGS })
+  const before = await $.ui.mount({ plugin: 'cache-glance', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  expect(await before.find({ text: ' 42m left' })).toBeDefined()
+  await before.unmount()
+
+  await $.session.compact({ trigger: 'manual', messages: MSGS })
+  const band = await $.ui.mount({ plugin: 'cache-glance', surface: 'desktop', component: 'AbovePrompt', props: PROPS })
+  // Cold opens the card, which draws Robo and the chip itself. 85k at 2 x $4.
+  expect(JSON.stringify(await band.find({ key: 'card' }))).toContain('Cache cold. Compacted. Next message re-caches 85k tokens, about $0.68 on Opus.')
+  await band.unmount()
+
+  const pane = await $.ui.mount({ plugin: 'cache-glance', surface: 'desktop', component: 'Pane', requestId: 'cache-glance', props: { title: 'Cache and skills', isFocused: false, bodyColumns: 48, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } })
+  expect(await pane.find({ text: 'Compacted' })).toBeDefined()
+  expect(await pane.find({ text: '85k' })).toBeDefined()
+  expect(await pane.find({ text: 'to re-cache · 9% of 1M context' })).toBeDefined()
+  expect(await pane.find({ text: '$0.68' })).toBeDefined()
+  await pane.unmount()
+})

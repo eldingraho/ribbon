@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CacheState, Fold, Saved, Ttl, Window } from '../types'
-import { applyStep, cachedTokens, expiresAt, fromResume, hitRate, initial, status } from './cache'
+import { applyStep, cachedTokens, compacted, expiresAt, fromResume, hitRate, initial, status } from './cache'
 import {
   BG, EMPTY, HUE, INK, LINE, MUTED, ORANGE, ROBO_SIZE, TEXT, WORD, YELLOW,
   bandPx, cardKind, cardSvg, chipShapes, chipSvg, costOf, familyOf, fmtIdle, mineModel, roboSvg, svgDoc, usd,
@@ -102,6 +102,7 @@ export const viewOf = (s: CacheState | null, now: number): CacheView | null => {
     window: s.contextWindow,
     mine: familyOf(s.model),
     ttlMin: ttlMinOf(s.ttl),
+    isCompacted: s.isCompacted,
   }
 }
 
@@ -363,9 +364,15 @@ export const register: Register = on => {
 
   on('session.compact', async ($, e, next) => {
     const done = await next(e)
-    await safely($, () =>
-      update($, cache, state => (state === null ? null : { ...state, lastHitAt: null, isCompacted: true })),
-    )
+    // Only the main conversation's own compaction changes its cache: not a
+    // subagent's, not a precompute, not one a hook skipped.
+    if (e.agentId === undefined && e.trigger !== 'precompute' && done.skip === undefined) {
+      await safely($, async () => {
+        const at = await $.clock.now()
+        await update($, cache, state => compacted(state, at, done.tokensAfter))
+        await persist($)
+      })
+    }
 
     return done
   })
@@ -520,6 +527,7 @@ export const register: Register = on => {
     const open = Svg !== null && (stored && stored.mode === mode ? stored.open : cold)
     const toggle = () => toggleFold($, mode)
     const left = `${Math.max(0, view.ttlMin - view.idleMin)}m left`
+    const idleText = view.isCompacted ? 'compacted' : `${view.idle} idle`
 
     const badge = Svg
       ? [
@@ -535,7 +543,7 @@ export const register: Register = on => {
     // One phrase pair everywhere: "51m left" warm, "18m idle" cold, and the
     // next message's price after either.
     const summary = [
-      <Text key="time" color={hue} bold>{cold ? ` ${view.idle} idle` : ` ${left}`}</Text>,
+      <Text key="time" color={hue} bold>{cold ? ` ${idleText}` : ` ${left}`}</Text>,
       mine ? <Text key="dot" color={MUTED}> · </Text> : null,
       mine ? <Text key="cost" color={TEXT} bold>{usd(costOf(mine, mode, view.tokens, view.ttlMin))}</Text> : null,
       mine ? <Text key="next" color={MUTED}> next</Text> : null,
@@ -575,7 +583,7 @@ export const register: Register = on => {
           {open ? null : (
             <Box key="block" flexDirection="column" flexShrink={0} marginLeft={3} marginRight={2}>
               <Box flexDirection="row" alignItems="center">{badge}</Box>
-              <Text color={hue} bold>{cold ? `${view.idle} idle` : left}</Text>
+              <Text color={hue} bold>{cold ? idleText : left}</Text>
               {mine ? (
                 <Box flexDirection="row">
                   <Text color={TEXT} bold>{usd(costOf(mine, mode, view.tokens, view.ttlMin))}</Text>
@@ -777,7 +785,9 @@ export const register: Register = on => {
               <Text backgroundColor={hue} color={INK} bold>{` ${WORD[mode]} `}</Text>
             )}
           </Box>
-          {cold
+          {view.isCompacted
+            ? hero('time', 'Compacted', '', state.lastHitAt !== null ? `at ${clock(state.lastHitAt)} · the summary replaces the history` : 'the summary replaces the history', HUE.cold)
+            : cold
             ? hero('time', view.idle, 'idle', end !== null ? `went cold at ${clock(end)}` : 'cold now', HUE.cold)
             : hero('time', `${minutes}m`, 'left', end !== null ? `cold at ${clock(end)}` : '', HUE.cold)}
           {hero(
