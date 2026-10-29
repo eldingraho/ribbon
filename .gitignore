@@ -1,4 +1,5 @@
-node_modules/
+# Written at run time by the band, for width calibration
+layout.log
+# Written by the engine for the editor
 .claude-plugin/types/
 .DS_Store
-Thumbs.db

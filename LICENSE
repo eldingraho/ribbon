@@ -1,3 +1,7 @@
+cache-glance includes code ported from Ribbon (https://github.com/robonuggets/ribbon):
+hooks/cache-art.ts, hooks/font.ts, the band in hooks/register.tsx, and
+tests/band.test.ts and tests/card.test.ts. Ribbon's license follows.
+
 MIT License
 
 Copyright (c) 2026 Jay E | RoboNuggets (robonuggets.com)
@@ -19,3 +23,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+hooks/font.ts embeds the Outfit font (https://github.com/Outfitio/Outfit-Fonts),
+licensed under the SIL Open Font License 1.1.

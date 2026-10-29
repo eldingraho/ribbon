@@ -1,5 +1,10 @@
 // The cache card's drawings. Pure: each function returns an SVG string the band
 // hands to Svg. Nothing here touches the engine.
+//
+// Ported from Ribbon (github.com/robonuggets/ribbon), MIT License,
+// Copyright (c) 2026 Jay E | RoboNuggets. Changed here: the cache's lifetime
+// is the TTL the mod inferred (1h or 5m) rather than a fixed hour, and the
+// cold write is priced for that TTL.
 
 import { SANS } from './font'
 
@@ -9,7 +14,8 @@ export type Kind = 'wide' | 'stacked' | 'tight'
 // The band's own colours, measured from the app.
 export const BG = '#24221c'
 export const TEXT = '#e8e2d2'
-export const MUTED = '#8d8775'
+// Lifted from Ribbon's #8d8775 (4.43:1) to pass WCAG AA on BG.
+export const MUTED = '#948e7c'
 export const EMPTY = '#4a463b'
 export const LINE = '#36332b'
 export const ORANGE = '#ff6b1a'
@@ -17,7 +23,8 @@ export const YELLOW = '#f5a623'
 
 // The cache's two states in a muted shade: desaturated so they sit
 // beside the band's own orange and yellow.
-export const HUE: Record<Mode, string> = { warm: '#cc6363', cold: '#6aaabd' }
+// Warm lifted from Ribbon's #cc6363 (4.19:1) to pass WCAG AA on BG.
+export const HUE: Record<Mode, string> = { warm: '#d87070', cold: '#6aaabd' }
 /** Text on a filled chip. */
 export const INK = '#1c1a16'
 export const WORD: Record<Mode, string> = { warm: 'WARM', cold: 'COLD' }
@@ -34,11 +41,21 @@ export const TIGHT_AT = 42
 export const kindOf = (columns: number): Kind => (columns >= WIDE_AT ? 'wide' : columns >= TIGHT_AT ? 'stacked' : 'tight')
 
 /**
- * The band's width in CSS pixels for a column count: the engine keeps 5 cells
- * for its [-], and a cell is 12 px (the app's code font advance). Rounds down,
- * so the card never runs past the slot; the few pixels left are band colour.
+ * The band's width in CSS pixels for a column count. Ribbon assumed 12 px a
+ * column; on this desktop a column measures about 9.2 px (49 columns is about
+ * 452 px), less about 16 px of frame inset. Rounds down, so the card never runs
+ * past the slot; the few pixels left are band colour.
  */
-export const bandPx = (columns: number): number => (columns + 5) * 12
+export const COLUMN_PX = 9.2
+export const bandPx = (columns: number): number => Math.max(240, Math.floor(columns * COLUMN_PX) - 16)
+
+/** The widest card layout that fits W pixels, never roomier than `want`. */
+export const cardKind = (want: Kind, W: number): Kind => {
+  // From 1019 px the wide card's four model columns get their full 92 px.
+  if (want === 'wide' && W >= 1019) return 'wide'
+  if (want !== 'tight' && W >= 530) return 'stacked'
+  return 'tight'
+}
 
 // $ per million tokens: input, and the cache read. The 1-hour cache write is 2 times
 // input. Haiku 5.5 is $0.10 up to 100K tokens and $0.50 above; long sessions use the
@@ -57,9 +74,12 @@ export const familyOf = (model: string | null | undefined): string | null => {
   return MODELS.find(x => m.includes(x.id))?.id ?? null
 }
 
-export const coldCost = (m: Model, tokens: number): number => (tokens / 1e6) * m.input * 2
+/** A cache write costs 2 times input on the 1-hour cache, 1.25 times on the 5-minute one. */
+export const writeTimes = (ttlMin: number): number => (ttlMin >= TTL_MIN ? 2 : 1.25)
+export const coldCost = (m: Model, tokens: number, ttlMin = TTL_MIN): number => (tokens / 1e6) * m.input * writeTimes(ttlMin)
 export const warmCost = (m: Model, tokens: number): number => (tokens / 1e6) * m.read
-export const costOf = (m: Model, mode: Mode, tokens: number): number => (mode === 'cold' ? coldCost(m, tokens) : warmCost(m, tokens))
+export const costOf = (m: Model, mode: Mode, tokens: number, ttlMin = TTL_MIN): number =>
+  mode === 'cold' ? coldCost(m, tokens, ttlMin) : warmCost(m, tokens)
 export const usd = (n: number): string => '$' + n.toFixed(2)
 export const tok = (n: number): string => (n >= 1e6 ? `${Number((n / 1e6).toFixed(1))}M` : `${Math.round(n / 1000)}k`)
 
@@ -85,7 +105,12 @@ export type CacheView = {
   window: number
   /** This session's MODELS id, or null when the model isn't priced. */
   mine: string | null
+  /** The cache's lifetime in minutes: 60, or 5 once the mod sees the short cache. */
+  ttlMin: number
 }
+
+/** The lifetime as the card labels it. */
+export const ttlWord = (ttlMin: number): string => (ttlMin >= 60 ? `${ttlMin / 60}h` : `${ttlMin}m`)
 
 export const mineModel = (v: CacheView): Model | undefined => MODELS.find(m => m.id === v.mine)
 
@@ -110,8 +135,10 @@ const CHIP: Record<string, { w: number; h: number }> = {
   'YOU@10': { w: 36, h: 17 },
 }
 
-export const chipShapes = (x: number, y: number, word: string, fill: string, size: number, ls: number): { w: number; h: number; svg: string } => {
-  const { w, h } = CHIP[`${word}@${size}`] ?? { w: Math.round(word.length * size * 0.8 + size * 1.24), h: Math.round(size * 1.65) }
+export const chipShapes = (x: number, y: number, word: string, fill: string, size: number, ls: number, width?: number): { w: number; h: number; svg: string } => {
+  const measured = CHIP[`${word}@${size}`] ?? { w: Math.round(word.length * size * 0.8 + size * 1.24), h: Math.round(size * 1.65) }
+  const w = width ?? measured.w
+  const h = measured.h
   return {
     w,
     h,
@@ -207,6 +234,8 @@ type TextOpts = { size?: number; w?: number; fill?: string; ls?: number; anchor?
 
 /** The gap between the row and the card, drawn inside the card. */
 const CARD_TOP = 6
+/** The height of a second row of model prices, when they go two a row. */
+const COST_ROW = 108
 
 export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; w: number; h: number; alt: string } => {
   const mode = v.mode
@@ -239,15 +268,15 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       g += `<line x1="${x0}" y1="${ly}" x2="${x0 + 18}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
       for (let cx = x0 + 30; cx <= x1 - 14; cx += 9) g += `<circle cx="${cx}" cy="${ly}" r="2.2" fill="${ICE}"/>`
       g += `<circle cx="${x1}" cy="${ly}" r="5.5" fill="${ICE}"/>`
-      g += t(x, y + k.cap, 'warm 1h', { size: 12, w: 600, fill: FIRE })
+      g += t(x, y + k.cap, `warm ${ttlWord(v.ttlMin)}`, { size: 12, w: 600, fill: FIRE })
       g += t(x1 + 5, y + k.cap, 'cold now', { size: 12, w: 600, fill: ICE, anchor: 'end' })
     } else {
-      const now = x0 + (x1 - x0) * Math.min(1, v.idleMin / TTL_MIN)
+      const now = x0 + (x1 - x0) * Math.min(1, v.idleMin / v.ttlMin)
       g += `<line x1="${x0}" y1="${ly}" x2="${now}" y2="${ly}" stroke="${FIRE}" stroke-width="5" stroke-linecap="round"/>`
       for (let cx = now + 12; cx <= x1 - 12; cx += 9) g += `<circle cx="${cx}" cy="${ly}" r="2.2" fill="${EMPTY}"/>`
       g += `<circle cx="${x1}" cy="${ly}" r="4.5" fill="none" stroke="${ICE}" stroke-width="2"/>`
       g += t(x, y + k.cap, 'last reply', { size: 12, w: 500 })
-      g += t(x1 + 5, y + k.cap, `cold in ${Math.max(0, TTL_MIN - v.idleMin)}m`, { size: 12, w: 600, fill: ICE, anchor: 'end' })
+      g += t(x1 + 5, y + k.cap, `cold in ${Math.max(0, v.ttlMin - v.idleMin)}m`, { size: 12, w: 600, fill: ICE, anchor: 'end' })
     }
     return g
   }
@@ -266,13 +295,16 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       return d
     }
     if (o.compact) {
-      const cols = 20
+      // As many dots as fit beside the token count, so the two never overlap.
+      const cols = Math.max(6, Math.min(20, Math.floor((w - 130) / 9.6)))
       const gx = x + w - (cols - 1) * 9.6 - 6
-      return g + big(y + 56, 26, 14) + grid(gx, y + 42, cols, 9.6)
+      const pct = t(x + w, y + 24, `${Math.round(share * 100)}% of ${tok(v.window)} context`, { size: 11, w: 600, anchor: 'end' })
+      return g + big(y + 56, 26, 14) + grid(gx, y + 42, cols, 9.6) + (v.window > 0 ? pct : '')
     }
     // 25 dots a row on the page; fewer only where the band is too narrow for them.
-    const cols = Math.max(10, Math.min(25, Math.floor(w / 9.6)))
-    return g + big(y + 72, 38, 15) + grid(x, y + 90, cols, 9.6) + t(x, y + 120, `${Math.round(share * 100)}% of the ${tok(v.window)} context`, { size: 12, w: 500 })
+    // Across the zone's whole width, so a roomy card doesn't end half way.
+    const cols = Math.max(10, Math.floor(w / 9.6))
+    return g + big(y + 72, 38, 15) + grid(x, y + 90, cols, 9.6) + t(x, y + 120, `${Math.round(share * 100)}% of ${tok(v.window)} context`, { size: 12, w: 500 })
   }
 
   // What the next message costs, by model. One scale for both states (the cold
@@ -282,16 +314,20 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       ? { lab: 24, base: 100, rows: 6, step: 7, chip: 58, price: 88, name: 102 }
       : { lab: 30, base: 116, rows: 8, step: 8, chip: 70, price: 104, name: 120 }
     let g = t(x, y + k.lab, cold ? 'NEXT MESSAGE COSTS' : 'NEXT MESSAGE COSTS, CACHED', { ls: 1.4 })
-    const top = Math.max(...MODELS.map(m => coldCost(m, v.tokens)))
+    const top = Math.max(...MODELS.map(m => coldCost(m, v.tokens, v.ttlMin)))
+    // A price needs about 80 px beside its bars; narrower, two models a row.
+    const perRow = colW >= 90 ? MODELS.length : 2
+    const cw = perRow === MODELS.length ? colW : colW * 2
     MODELS.forEach((m, i) => {
       const mine = m.id === v.mine
-      const n = top > 0 ? Math.max(1, Math.round((costOf(m, mode, v.tokens) / top) * k.rows)) : 1
-      const bx = x + i * colW
+      const n = top > 0 ? Math.max(1, Math.round((costOf(m, mode, v.tokens, v.ttlMin) / top) * k.rows)) : 1
+      const bx = x + (i % perRow) * cw
+      y += i > 0 && i % perRow === 0 ? COST_ROW : 0
       for (let r = 0; r < k.rows; r++)
         for (let c = 0; c < 3; c++)
           g += `<circle cx="${bx + 3 + c * 8}" cy="${y + k.base - r * k.step}" r="2.8" fill="${r < n ? (mine ? HUEM : MUTED) : EMPTY}"/>`
       if (mine) g += chipShapes(bx + 30, y + k.chip, 'YOU', HUEM, 10, 0.8).svg
-      g += t(bx + 30, y + k.price, usd(costOf(m, mode, v.tokens)), { size: 17, w: mine ? 700 : 500, fill: mine ? TEXT : MUTED })
+      g += t(bx + 30, y + k.price, usd(costOf(m, mode, v.tokens, v.ttlMin)), { size: 17, w: mine ? 700 : 500, fill: mine ? TEXT : MUTED })
       g += t(bx + 30, y + k.name, m.NAME, { size: 11, w: 700, fill: mine ? HUEM : MUTED, ls: 0.8 })
     })
     return g
@@ -303,7 +339,7 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
     H = 132
     // 92 px a model column on the page's full width; tighter near the switch point,
     // where the last column still needs about 90 px for its price.
-    const colW = Math.min(92, Math.floor((W - 640 - 103) / 3))
+    const colW = Math.max(92, Math.floor((W - 640 - 103) / 3))
     g = zoneIdle(13, 0, 290, { header: true }) + vline(314, 18, H - 36) + zoneSize(340, 0, 260) + vline(614, 18, H - 36) + zoneCost(640, 0, colW)
   } else if (kind === 'stacked') {
     H = 266
@@ -312,10 +348,10 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
       vline(314, 18, 96) +
       zoneSize(340, 0, W - 340 - 13) +
       hline(134) +
-      zoneCost(13, 134, Math.min(160, (W - 26) / 4))
+      zoneCost(13, 134, (W - 26) / 4)
   } else {
     // Narrow: the cache row above already shows Robo and the chip.
-    H = 296
+    H = (W - 26) / 4 >= 90 ? 296 : 296 + COST_ROW
     g =
       zoneIdle(13, 0, W - 26, { compact: true }) +
       hline(110) +
@@ -325,8 +361,11 @@ export const cardSvg = (v: CacheView, kind: Kind, W: number): { source: string; 
   }
   const h = H + CARD_TOP
   const body = `<rect width="${W}" height="${h}" fill="${BG}"/><g transform="translate(0 ${CARD_TOP})">` + hline(0) + g + '</g>'
+  const priced = mineModel(v)
+  const price = priced ? usd(costOf(priced, mode, v.tokens, v.ttlMin)) : ''
+  const on = priced ? `${priced.NAME[0]}${priced.NAME.slice(1).toLowerCase()}` : ''
   const alt = cold
-    ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens.`
-    : `Cache warm. Goes cold in ${Math.max(0, TTL_MIN - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.`
+    ? `Cache cold. Idle ${v.idle}. Next message re-caches ${tok(v.tokens)} tokens${priced ? `, about ${price} on ${on}` : ''}.`
+    : `Cache warm. Goes cold in ${Math.max(0, v.ttlMin - v.idleMin)} minutes. ${tok(v.tokens)} tokens cached.${priced ? ` Next message about ${price} on ${on}.` : ''}`
   return { source: svgDoc(W, h, body, true), w: W, h, alt }
 }

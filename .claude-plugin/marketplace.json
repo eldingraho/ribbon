@@ -1,11 +1,14 @@
 {
-  "name": "robonuggets",
-  "owner": { "name": "Jay E", "url": "https://robonuggets.com" },
+  "name": "eldingraho",
+  "owner": {
+    "name": "eldingraho"
+  },
+  "description": "cache-glance: a fork of Ribbon for Claude Code, with prompt-cache, usage and skill views.",
   "plugins": [
     {
-      "name": "ribbon",
+      "name": "cache-glance",
       "source": "./",
-      "description": "A slim band above the prompt: usage left, reset times, and whether the prompt cache is warm or cold with what the next message costs."
+      "description": "A band above the prompt and a details pane, forked from Ribbon: usage left, whether the prompt cache is warm or cold and what the next message costs, and the skills run in this session."
     }
   ]
 }

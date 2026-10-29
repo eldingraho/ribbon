@@ -1,3 +1,4 @@
+// Ported from Ribbon (github.com/robonuggets/ribbon), MIT License, Copyright (c) 2026 Jay E | RoboNuggets.
 import { expect, mock, test } from 'claude-code/testing'
 
 const WINDOWS = [
@@ -25,7 +26,7 @@ test('the band shows percent left for each window once a reading lands', async (
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({
-      plugin: 'ribbon',
+      plugin: 'cache-glance',
       surface,
       component: 'AbovePrompt',
       props: PROPS,
@@ -49,12 +50,15 @@ test('in a narrow band each window stacks, with percent left and reset time on t
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const band = await $.ui.mount({
-    plugin: 'ribbon',
+    plugin: 'cache-glance',
     surface: 'desktop',
     component: 'AbovePrompt',
     props: { ...PROPS, bodyColumns: 36 },
   })
   expect(await band.find({ text: '42% left' })).toBeDefined()
-  expect(await band.find({ text: 'resets 2h 0m' })).toBeDefined()
+  // Changed from Ribbon: at 36 columns the USAGE label and two blocks run past
+  // the edge on the desktop, so the label goes and the reset loses its word.
+  expect(await band.find({ text: '2h 0m' })).toBeDefined()
+  expect(await band.find({ text: 'USAGE' })).toBeUndefined()
   await band.unmount()
 })
